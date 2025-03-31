@@ -41,6 +41,10 @@ func New(ctx context.Context, c *config.Config) (search.Searcher, error) {
 		index:  c.Opensearch.Index.Name,
 	}
 
+	if err := s.checkAndCreateIndex(ctx, c.Opensearch.Index.Name); err != nil {
+		return nil, err
+	}
+
 	return s, nil
 }
 
@@ -90,25 +94,21 @@ func (s *openSearchClient) checkAndCreateIndex(ctx context.Context, index string
 	return nil
 }
 
-func (s *openSearchClient) Search(ctx context.Context, index string, query string) ([]search.Document, error) {
+func (s *openSearchClient) Search(ctx context.Context, query string) ([]search.Document, error) {
 	// TODO: Implement search
 	return nil, nil
 }
 
-func (s *openSearchClient) Index(ctx context.Context, index string, id string, data any) error {
+func (s *openSearchClient) Index(ctx context.Context, id string, data any) error {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
 
 	req := api.IndexRequest{
-		Index:      index,
+		Index:      s.index,
 		DocumentID: id,
 		Body:       bytes.NewReader(jsonData),
-	}
-
-	if err := s.checkAndCreateIndex(ctx, index); err != nil {
-		return err
 	}
 
 	resp, err := req.Do(ctx, s.client)
@@ -134,7 +134,27 @@ func (s *openSearchClient) Index(ctx context.Context, index string, id string, d
 	return nil
 }
 
-func (s *openSearchClient) DeIndex(ctx context.Context, index string, id string) error {
-	// TODO: Implement deindex
+func (s *openSearchClient) DeIndex(ctx context.Context, id string) error {
+	req := api.DeleteRequest{
+		Index:      s.index,
+		DocumentID: id,
+	}
+
+	resp, err := req.Do(ctx, s.client)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	if resp.IsError() {
+		return fmt.Errorf("failed to delete document: %s %s", resp.Status(), string(body))
+	}
+
+	log.Printf("[opensearch] document deleted: %v", id)
+
 	return nil
 }

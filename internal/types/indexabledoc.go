@@ -2,14 +2,13 @@ package types
 
 import (
 	"fmt"
-	"net/url"
 	"strings"
 )
 
 type IndexableDocument struct {
-	Id        string
-	IndexName string
-	Data      map[string]any
+	Id      string
+	DeIndex bool
+	Data    map[string]any
 }
 
 func GetIndexableDoc(event Event) (*IndexableDocument, error) {
@@ -30,35 +29,27 @@ func GetIndexableDoc(event Event) (*IndexableDocument, error) {
 		return nil, fmt.Errorf("object is nil for %s", cId)
 	}
 
-	id := fmt.Sprintf("%s", object["id"])
+	var id string
+	if _, ok := object["id"]; !ok {
+		id = parts[4]
+	} else {
+		id = fmt.Sprintf("%s", object["id"])
+	}
+
 	if id == "" {
 		return nil, fmt.Errorf("object id is empty for %+v", object)
 	}
 
-	if strings.Contains(id, "/") {
-		id = url.PathEscape(id)
+	id = strings.ReplaceAll(id, "/", "-")
+
+	object["_metadata"] = map[string]any{
+		"resource_type": resource,
+		"cid":           cId,
 	}
 
 	return &IndexableDocument{
-		Id:        id,
-		IndexName: getIndexName(resource),
-		Data:      object,
+		Id:      id,
+		DeIndex: event.Op == "d",
+		Data:    object,
 	}, nil
-}
-
-func getIndexName(resource string) string {
-	var indexName string
-	switch resource {
-	case "service":
-		indexName = "kong-services"
-	case "node":
-		indexName = "kong-nodes"
-	case "upstream":
-		indexName = "kong-upstreams"
-	case "store_event":
-		indexName = "kong-events"
-	default:
-		indexName = "kong-default"
-	}
-	return indexName
 }

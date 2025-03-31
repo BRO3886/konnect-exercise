@@ -7,7 +7,7 @@ import (
 type Document map[string]any
 
 type Searcher interface {
-	Index(ctx context.Context, index string, id string, data any) error
-	DeIndex(ctx context.Context, index string, id string) error
-	Search(ctx context.Context, index string, query string) ([]Document, error)
+	Index(ctx context.Context, id string, data any) error
+	DeIndex(ctx context.Context, id string) error
+	Search(ctx context.Context, query string) ([]Document, error)
 }
