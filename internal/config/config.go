@@ -27,7 +27,9 @@ type Config struct {
 		Password   string   `koanf:"password"`
 		MaxRetries int      `koanf:"max_retries"`
 		Index      struct {
-			Name string `koanf:"name"`
+			Name          string `koanf:"name"`
+			BuffSize      int    `koanf:"buff_size"`
+			FlushInterval int    `koanf:"flush_interval"`
 		} `koanf:"index"`
 	} `koanf:"opensearch"`
 }

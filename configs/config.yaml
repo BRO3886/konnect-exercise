@@ -17,3 +17,5 @@ opensearch:
   max_retries: 5
   index:
     name: cdc-events
+    buff_size: 100
+    flush_interval: 5 # seconds

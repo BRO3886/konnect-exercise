@@ -92,7 +92,7 @@ func runIndexing(
 			return search.DeIndex(ctx, document.Id)
 		}
 
-		return search.Index(ctx, document.Id, document.Data)
+		return search.Index(ctx, *document)
 	}); err != nil {
 		log.Printf("[handler] error dequeuing events: %v", err)
 	}
@@ -124,6 +124,7 @@ func runIngestion(ctx context.Context, cfg *config.Config, enqueuer queue.Enqueu
 			log.Printf("error enqueuing event %d: %v", i, err)
 		}
 		log.Printf("enqueued event %d", i)
+		time.Sleep(time.Millisecond * 100)
 	}
 	log.Printf("ingestion completed")
 }

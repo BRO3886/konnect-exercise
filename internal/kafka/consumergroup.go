@@ -32,7 +32,6 @@ func (c *ConsumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession,
 	}()
 
 	for message := range claim.Messages() {
-		log.Printf("[kafka] [%s] consuming message %d message: %s", claim.Topic(), message.Offset, string(message.Value))
 		if err := c.handler(session.Context(), message.Value); err != nil {
 			log.Printf("error handling message: %v", err)
 			return err

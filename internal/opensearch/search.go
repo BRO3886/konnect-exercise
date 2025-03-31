@@ -1,7 +1,6 @@
 package opensearch
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -10,16 +9,23 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/BRO3886/konnect-exercise/internal/config"
 	"github.com/BRO3886/konnect-exercise/internal/search"
+	"github.com/BRO3886/konnect-exercise/internal/types"
 	external "github.com/opensearch-project/opensearch-go/v2"
 	api "github.com/opensearch-project/opensearch-go/v2/opensearchapi"
 )
 
 type openSearchClient struct {
-	client *external.Client
-	index  string
+	client        *external.Client
+	index         string
+	buff          []types.IndexableDocument
+	flushInterval time.Duration
+	buffSize      int
+	m             sync.Mutex
 }
 
 func New(ctx context.Context, c *config.Config) (search.Searcher, error) {
@@ -37,13 +43,18 @@ func New(ctx context.Context, c *config.Config) (search.Searcher, error) {
 	}
 
 	s := &openSearchClient{
-		client: client,
-		index:  c.Opensearch.Index.Name,
+		client:        client,
+		index:         c.Opensearch.Index.Name,
+		buff:          make([]types.IndexableDocument, 0, c.Opensearch.Index.BuffSize),
+		flushInterval: time.Second * time.Duration(c.Opensearch.Index.FlushInterval),
+		buffSize:      c.Opensearch.Index.BuffSize,
 	}
 
 	if err := s.checkAndCreateIndex(ctx, c.Opensearch.Index.Name); err != nil {
 		return nil, err
 	}
+
+	go s.startFlushTicker(ctx)
 
 	return s, nil
 }
@@ -99,16 +110,50 @@ func (s *openSearchClient) Search(ctx context.Context, query string) ([]search.D
 	return nil, nil
 }
 
-func (s *openSearchClient) Index(ctx context.Context, id string, data any) error {
-	jsonData, err := json.Marshal(data)
-	if err != nil {
-		return err
+func (s *openSearchClient) Index(ctx context.Context, doc types.IndexableDocument) error {
+	s.m.Lock()
+	defer s.m.Unlock()
+	s.buff = append(s.buff, doc)
+	return nil
+}
+
+func (s *openSearchClient) startFlushTicker(ctx context.Context) {
+	ticker := time.NewTicker(s.flushInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := s.flush(ctx); err != nil {
+				log.Printf("[opensearch] [flush] failed to flush documents: %v", err)
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (s *openSearchClient) flush(ctx context.Context) error {
+	s.m.Lock()
+	defer s.m.Unlock()
+
+	if len(s.buff) == 0 {
+		return nil
 	}
 
-	req := api.IndexRequest{
-		Index:      s.index,
-		DocumentID: id,
-		Body:       bytes.NewReader(jsonData),
+	bulkReq := strings.Builder{}
+	for _, doc := range s.buff {
+		jsonData, err := json.Marshal(doc.Data)
+		if err != nil {
+			log.Printf("[opensearch] [flush] failed to marshal document: %v", err)
+			continue
+		}
+		bulkReq.WriteString(fmt.Sprintf(`{"index": {"_index": "%s", "_id": "%s"}}`, s.index, doc.Id))
+		bulkReq.WriteString(fmt.Sprintf("%s\n", string(jsonData)))
+	}
+
+	req := api.BulkRequest{
+		Body: strings.NewReader(bulkReq.String()),
 	}
 
 	resp, err := req.Do(ctx, s.client)
@@ -116,20 +161,19 @@ func (s *openSearchClient) Index(ctx context.Context, id string, data any) error
 		return err
 	}
 	defer resp.Body.Close()
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
 
 	if resp.IsError() {
-		return fmt.Errorf("failed to index document: %s %s", resp.Status(), string(body))
+		return fmt.Errorf("failed to flush documents: %s %s", resp.Status(), string(body))
 	}
 
-	if resp.HasWarnings() {
-		log.Printf("[opensearch] warnings: %v", resp.Warnings())
-	}
+	log.Printf("[opensearch] flushed %d documents", len(s.buff))
 
-	log.Printf("[opensearch] document indexed: %v", data)
+	s.buff = make([]types.IndexableDocument, 0, s.buffSize)
 
 	return nil
 }
