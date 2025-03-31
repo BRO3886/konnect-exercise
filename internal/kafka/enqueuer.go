@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 
-	"github.com/BRO3886/konnect-exercise/internal/queue"
 	"github.com/IBM/sarama"
 )
 
@@ -12,9 +11,10 @@ type KafkaEnqueuer struct {
 	syncProducer  sarama.SyncProducer
 	asyncProducer sarama.AsyncProducer
 	cfg           *Config
+	producerErrs  chan *sarama.ProducerError
 }
 
-func NewEnqueuer(ctx context.Context, c *Config) (queue.Enqueuer, error) {
+func NewEnqueuer(ctx context.Context, c *Config) (*KafkaEnqueuer, error) {
 	syncProducer, err := sarama.NewSyncProducer(c.GetBrokers(), c.GetConfig())
 	if err != nil {
 		return nil, err
@@ -25,11 +25,23 @@ func NewEnqueuer(ctx context.Context, c *Config) (queue.Enqueuer, error) {
 		return nil, err
 	}
 
-	return &KafkaEnqueuer{
+	k := &KafkaEnqueuer{
 		syncProducer:  syncProducer,
 		asyncProducer: asyncProducer,
 		cfg:           c,
-	}, nil
+	}
+
+	if !c.IsSync() {
+		k.producerErrs = make(chan *sarama.ProducerError)
+		go func() {
+			defer close(k.producerErrs)
+			for err := range k.asyncProducer.Errors() {
+				k.producerErrs <- err
+			}
+		}()
+	}
+
+	return k, nil
 }
 
 func (k *KafkaEnqueuer) Enqueue(ctx context.Context, topic string, data []byte) error {
@@ -40,9 +52,16 @@ func (k *KafkaEnqueuer) Enqueue(ctx context.Context, topic string, data []byte) 
 	if k.cfg.IsSync() {
 		return k.enqueueSync(ctx, msg)
 	}
-	ch := make(chan error)
-	k.enqueueAsync(ctx, msg, ch)
-	return <-ch
+
+	k.enqueueAsync(ctx, msg)
+	return nil
+}
+
+func (k *KafkaEnqueuer) Errors() <-chan *sarama.ProducerError {
+	if k.cfg.IsSync() {
+		return nil
+	}
+	return k.producerErrs
 }
 
 func (k *KafkaEnqueuer) enqueueSync(ctx context.Context, msg *sarama.ProducerMessage) error {
@@ -54,22 +73,7 @@ func (k *KafkaEnqueuer) enqueueSync(ctx context.Context, msg *sarama.ProducerMes
 	return nil
 }
 
-func (k *KafkaEnqueuer) enqueueAsync(ctx context.Context, msg *sarama.ProducerMessage, ch chan error) {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go func(ctx context.Context) {
-		defer close(ch)
-		for {
-			select {
-			case <-ctx.Done():
-				ch <- nil
-				return
-			case err := <-k.asyncProducer.Errors():
-				ch <- err
-				return
-			}
-		}
-	}(ctx)
+func (k *KafkaEnqueuer) enqueueAsync(ctx context.Context, msg *sarama.ProducerMessage) {
 	k.asyncProducer.Input() <- msg
 }
 

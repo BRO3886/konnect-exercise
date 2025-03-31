@@ -32,7 +32,7 @@ func main() {
 	ctx := context.Background()
 	kafkaCfg := kafka.NewConfig(
 		kafka.WithBrokers(cfg.Kafka.Brokers...),
-		kafka.WithSyncProducer(),
+		kafka.WithSyncProducer(), // comment to run async producer
 		kafka.WithConsumeOldest(),
 		kafka.WithRetry(
 			cfg.Kafka.Retry.Max,
@@ -45,7 +45,27 @@ func main() {
 		if err != nil {
 			log.Fatalf("error starting kafka enqueuer: %v", err)
 		}
+		// // --- uncomment when using async producer
+		// var wg sync.WaitGroup
+		// wg.Add(1)
+		// go func() {
+		// 	defer wg.Done()
+		// 	for {
+		// 		select {
+		// 		case err := <-enqueuer.Errors():
+		// 			if err != nil {
+		// 				log.Printf("[ingestion] error: %v", err)
+		// 			}
+		// 		case <-ctx.Done():
+		// 			return
+		// 		}
+		// 	}
+		// }()
+		// // ---
 		runIngestion(ctx, cfg, enqueuer)
+		// // --- uncomment when using async producer
+		// wg.Wait()
+		// // ---
 	} else if mode == "index" {
 		dequeuer, err := kafka.NewDequeuer(ctx, kafkaCfg)
 		if err != nil {
@@ -124,7 +144,9 @@ func runIngestion(ctx context.Context, cfg *config.Config, enqueuer queue.Enqueu
 			log.Printf("error enqueuing event %d: %v", i, err)
 		}
 		log.Printf("enqueued event %d", i)
+		// comment when using async producer
 		time.Sleep(time.Millisecond * 100)
+		// ---
 	}
 	log.Printf("ingestion completed")
 }

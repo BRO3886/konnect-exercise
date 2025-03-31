@@ -141,8 +141,14 @@ func (s *openSearchClient) flush(ctx context.Context) error {
 		return nil
 	}
 
+	log.Printf("[opensearch] [flush] flushing %d documents", len(s.buff))
+
 	bulkReq := strings.Builder{}
 	for _, doc := range s.buff {
+		if len(doc.Data) == 0 {
+			log.Printf("[opensearch] [flush] empty document: %v", doc.Id)
+			continue
+		}
 		jsonData, err := json.Marshal(doc.Data)
 		if err != nil {
 			log.Printf("[opensearch] [flush] failed to marshal document: %v", err)
@@ -152,8 +158,13 @@ func (s *openSearchClient) flush(ctx context.Context) error {
 		bulkReq.WriteString(fmt.Sprintf("%s\n", string(jsonData)))
 	}
 
+	reqBody := bulkReq.String()
+	if reqBody == "" {
+		return nil
+	}
+
 	req := api.BulkRequest{
-		Body: strings.NewReader(bulkReq.String()),
+		Body: strings.NewReader(reqBody),
 	}
 
 	resp, err := req.Do(ctx, s.client)
@@ -171,7 +182,7 @@ func (s *openSearchClient) flush(ctx context.Context) error {
 		return fmt.Errorf("failed to flush documents: %s %s", resp.Status(), string(body))
 	}
 
-	log.Printf("[opensearch] flushed %d documents", len(s.buff))
+	log.Printf("[opensearch] [flush] flushed %d documents", len(s.buff))
 
 	s.buff = make([]types.IndexableDocument, 0, s.buffSize)
 
