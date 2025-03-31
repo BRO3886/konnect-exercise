@@ -9,11 +9,11 @@ build:
 
 .PHONY: run
 run-ingest: build
-	@./build/konnect -mode ingest -workers 1
+	@./build/konnect -mode ingest
 
 .PHONY: run-index
 run-index: build
-	@./build/konnect -mode index -workers 1
+	@./build/konnect -mode index
 
 .PHONY: clean
 clean:

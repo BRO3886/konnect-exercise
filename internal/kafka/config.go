@@ -35,7 +35,7 @@ func WithBrokers(brokers ...string) ConfigOpts {
 	}
 }
 
-func WithTopics(topics []string) ConfigOpts {
+func WithTopics(topics ...string) ConfigOpts {
 	return func(c *Config) {
 		c.topics = topics
 	}

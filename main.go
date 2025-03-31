@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/BRO3886/konnect-exercise/internal/config"
@@ -32,6 +33,7 @@ func main() {
 		kafka.WithBrokers(cfg.Kafka.Brokers...),
 		kafka.WithSyncProducer(), // comment to run async producer
 		kafka.WithConsumeOldest(),
+		kafka.WithTopics(cfg.Kafka.Topic.Name),
 		kafka.WithRetry(
 			cfg.Kafka.Retry.Max,
 			time.Duration(cfg.Kafka.Retry.Backoff)*time.Millisecond,
@@ -56,21 +58,21 @@ func main() {
 			log.Fatalf("error starting kafka enqueuer: %v", err)
 		}
 		// // --- uncomment when using async producer
-		// var wg sync.WaitGroup
-		// wg.Add(1)
-		// go func() {
-		// 	defer wg.Done()
-		// 	for {
-		// 		select {
-		// 		case err := <-enqueuer.Errors():
-		// 			if err != nil {
-		// 				log.Printf("[ingestion] error: %v", err)
-		// 			}
-		// 		case <-ctx.Done():
-		// 			return
-		// 		}
-		// 	}
-		// }()
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case err := <-enqueuer.Errors():
+					if err != nil {
+						log.Printf("[ingestion] error: %v", err)
+					}
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
 		// // ---
 		runIngestion(ctx, cfg, enqueuer)
 		// // --- uncomment when using async producer
