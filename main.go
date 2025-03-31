@@ -38,7 +38,19 @@ func main() {
 		),
 	)
 
-	if mode == "ingest" {
+	if mode == "index" {
+		dequeuer, err := kafka.NewDequeuer(ctx, kafkaCfg)
+		if err != nil {
+			log.Fatalf("error starting kafka dequeuer: %v", err)
+		}
+
+		searcher, err := opensearch.New(ctx, cfg)
+		if err != nil {
+			log.Fatalf("error starting opensearch searcher: %v", err)
+		}
+
+		runIndexing(ctx, cfg, dequeuer, searcher)
+	} else if mode == "ingest" {
 		enqueuer, err := kafka.NewEnqueuer(ctx, kafkaCfg)
 		if err != nil {
 			log.Fatalf("error starting kafka enqueuer: %v", err)
@@ -64,18 +76,6 @@ func main() {
 		// // --- uncomment when using async producer
 		// wg.Wait()
 		// // ---
-	} else if mode == "index" {
-		dequeuer, err := kafka.NewDequeuer(ctx, kafkaCfg)
-		if err != nil {
-			log.Fatalf("error starting kafka dequeuer: %v", err)
-		}
-
-		searcher, err := opensearch.New(ctx, cfg)
-		if err != nil {
-			log.Fatalf("error starting opensearch searcher: %v", err)
-		}
-
-		runIndexing(ctx, cfg, dequeuer, searcher)
 	}
 }
 
