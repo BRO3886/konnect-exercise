@@ -18,11 +18,9 @@ import (
 )
 
 var mode string
-var workers int
 
 func init() {
 	flag.StringVar(&mode, "mode", "ingest", "mode to run in")
-	flag.IntVar(&workers, "workers", 1, "number of workers to run")
 	flag.Parse()
 }
 
